@@ -1586,4 +1586,32 @@ body.light-theme .category-share-item:hover {
   animation: drawCheck 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.9s forwards;
 }
 
+/* Custom Category Dropdown Menu Styles */
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.category-dropdown-animate {
+  animation: dropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.dropdown-product-item {
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+
+.dropdown-product-item:hover {
+  background: rgba(255, 159, 28, 0.08) !important;
+  color: var(--accent-primary) !important;
+  padding-left: 0.85rem !important;
+}
+
+
 

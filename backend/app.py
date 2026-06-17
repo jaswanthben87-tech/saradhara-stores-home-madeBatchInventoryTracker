@@ -40,7 +40,7 @@ if razorpay_key_id and razorpay_key_secret:
     except Exception as e:
         print(f"Error initializing Razorpay Client: {str(e)}")
 
-def send_email_alert(recipient, message):
+def send_email_alert(recipient, message, html_message=None):
     # Dynamically load/reload .env to get the latest credentials instantly
     sender = None
     password = None
@@ -72,10 +72,40 @@ def send_email_alert(recipient, message):
         return
         
     try:
-        msg = MIMEText(message, 'plain', 'utf-8')
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        
+        msg = MIMEMultipart('alternative')
         msg['Subject'] = Header('Sharadha Stores Batch Tracker Alert', 'utf-8')
         msg['From'] = sender
         msg['To'] = recipient
+        
+        # Attach plain text part
+        part1 = MIMEText(message, 'plain', 'utf-8')
+        msg.attach(part1)
+        
+        # Attach HTML part
+        if not html_message:
+            # Fallback simple HTML version
+            html_message = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; color: #2D3748; line-height: 1.6; padding: 20px; background-color: #F7FAFC;">
+                <div style="max-width: 600px; margin: 0 auto; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.02); background-color: #ffffff;">
+                    <div style="background: linear-gradient(135deg, #3182CE 0%, #2B6CB0 100%); padding: 20px; text-align: center; color: #ffffff;">
+                        <h2 style="margin: 0; font-size: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Sharadha Stores Alert</h2>
+                    </div>
+                    <div style="padding: 30px;">
+                        <p style="font-size: 16px; margin: 0 0 20px 0; color: #4A5568;">{message.replace('\n', '<br>')}</p>
+                    </div>
+                    <div style="background-color: #EDF2F7; padding: 15px; text-align: center; font-size: 11px; color: #718096; border-top: 1px solid #E2E8F0;">
+                        This is an automated notification from your Sharadha Stores Batch Inventory Tracker.
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+        part2 = MIMEText(html_message, 'html', 'utf-8')
+        msg.attach(part2)
         
         # Connect to Gmail SMTP Server using SSL (port 465)
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=5)
@@ -86,8 +116,199 @@ def send_email_alert(recipient, message):
     except Exception as e:
         print(f"SMTP Notification Error: {str(e)}")
 
-def send_email_alert_async(recipient, message):
-    threading.Thread(target=send_email_alert, args=(recipient, message)).start()
+def send_whatsapp_alert(phone_number, message):
+    # Log to notifications_log database
+    try:
+        conn = get_db()
+        conn.execute("""
+            INSERT INTO notifications_log (recipient, channel, message) 
+            VALUES (?, 'WhatsApp', ?)
+        """, (phone_number, message))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error logging WhatsApp notification to DB: {str(e)}")
+    
+    # Read credentials from .env dynamically
+    twilio_sid = None
+    twilio_token = None
+    twilio_from = None
+    callmebot_key = None
+    green_api_instance_id = None
+    green_api_token = None
+    telegram_token = None
+    telegram_chat_id = None
+    
+    dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+    if os.path.exists(dotenv_path):
+        try:
+            with open(dotenv_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        parts = line.split('=', 1)
+                        if len(parts) == 2:
+                            key = parts[0].strip()
+                            val = parts[1].strip().strip('\"\'')
+                            if key == 'TWILIO_ACCOUNT_SID':
+                                twilio_sid = val
+                            elif key == 'TWILIO_AUTH_TOKEN':
+                                twilio_token = val
+                            elif key == 'TWILIO_WHATSAPP_FROM':
+                                twilio_from = val
+                            elif key == 'CALLMEBOT_API_KEY':
+                                callmebot_key = val
+                            elif key == 'GREEN_API_INSTANCE_ID':
+                                green_api_instance_id = val
+                            elif key == 'GREEN_API_TOKEN':
+                                green_api_token = val
+                            elif key == 'TELEGRAM_BOT_TOKEN':
+                                telegram_token = val
+                            elif key == 'TELEGRAM_CHAT_ID':
+                                telegram_chat_id = val
+        except Exception as e:
+            print(f"Error reading .env dynamically: {str(e)}")
+            
+    # Try sending via Green API
+    if green_api_instance_id and green_api_token:
+        try:
+            import requests
+            import json
+            formatted_to = phone_number
+            cleaned_to = "".join(filter(str.isdigit, formatted_to))
+            if len(cleaned_to) == 10:
+                cleaned_to = f"91{cleaned_to}"  # Default to Indian country code
+            chat_id = f"{cleaned_to}@c.us"
+            
+            url = f"https://api.green-api.com/waInstance{green_api_instance_id}/sendMessage/{green_api_token}"
+            payload = {
+                "chatId": chat_id,
+                "message": message
+            }
+            headers = {
+                'Content-Type': 'application/json'
+            }
+            resp = requests.post(url, data=json.dumps(payload), headers=headers, timeout=10)
+            if resp.ok:
+                print(f"[Green API WhatsApp Success] Message sent to {phone_number}")
+                return
+            else:
+                print(f"Green API Error: {resp.text}")
+        except Exception as e:
+            print(f"Green API WhatsApp Alert Error: {str(e)}")
+
+    # Try sending via Telegram
+    if telegram_token and telegram_chat_id:
+        try:
+            import requests
+            url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
+            payload = {
+                "chat_id": telegram_chat_id,
+                "text": message
+            }
+            resp = requests.post(url, json=payload, timeout=10)
+            if resp.ok:
+                print(f"[Telegram Success] Message sent successfully to {telegram_chat_id}")
+                try:
+                    conn = get_db()
+                    conn.execute("""
+                        UPDATE notifications_log 
+                        SET channel = 'Telegram', recipient = ? 
+                        WHERE message = ? AND channel = 'WhatsApp' AND recipient = ?
+                    """, (telegram_chat_id, message, phone_number))
+                    conn.commit()
+                    conn.close()
+                except Exception as db_err:
+                    print(f"Error updating DB channel to Telegram: {str(db_err)}")
+                return
+            else:
+                print(f"Telegram API Error: {resp.text}")
+        except Exception as e:
+            print(f"Telegram Alert Error: {str(e)}")
+
+    # Try sending via Twilio WhatsApp API
+    if twilio_sid and twilio_token and twilio_from:
+        try:
+            from twilio.rest import Client
+            client = Client(twilio_sid, twilio_token)
+            formatted_to = phone_number
+            if not formatted_to.startswith('+'):
+                formatted_to = f"+91{formatted_to}" if len(formatted_to) == 10 else f"+{formatted_to}"
+            
+            client.messages.create(
+                body=message,
+                from_=f"whatsapp:{twilio_from}",
+                to=f"whatsapp:{formatted_to}"
+            )
+            print(f"[Twilio WhatsApp Alert Success] Message sent to {phone_number}")
+            return
+        except Exception as e:
+            print(f"Twilio WhatsApp Alert Error: {str(e)}")
+
+    # Try sending via CallMeBot (Free API for personal numbers)
+    if callmebot_key:
+        try:
+            import urllib.parse
+            import requests
+            formatted_to = phone_number
+            if not formatted_to.startswith('+'):
+                formatted_to = f"+91{formatted_to}" if len(formatted_to) == 10 else f"+{formatted_to}"
+            
+            encoded_msg = urllib.parse.quote(message)
+            url = f"https://api.callmebot.com/whatsapp.php?phone={formatted_to}&text={encoded_msg}&apikey={callmebot_key}"
+            resp = requests.get(url, timeout=10)
+            if resp.ok:
+                print(f"[CallMeBot WhatsApp Alert Success] Message sent to {phone_number}")
+            else:
+                print(f"CallMeBot API Error: {resp.text}")
+            return
+        except Exception as e:
+            print(f"CallMeBot WhatsApp Alert Error: {str(e)}")
+
+    # Default: Try sending via pywhatkit local browser automation
+    try:
+        import pywhatkit
+        formatted_to = phone_number
+        if not formatted_to.startswith('+'):
+            formatted_to = f"+91{formatted_to}" if len(formatted_to) == 10 else f"+{formatted_to}"
+        
+        print(f"[pywhatkit WhatsApp Automation] Automating browser to send to {formatted_to}...")
+        pywhatkit.sendwhatmsg_instantly(
+            phone_no=formatted_to,
+            message=message,
+            wait_time=15,
+            tab_close=True,
+            close_time=3
+        )
+        print(f"[pywhatkit WhatsApp Automation Success] Message automated for {formatted_to}")
+        return
+    except Exception as e:
+        print(f"pywhatkit WhatsApp Automation Error: {str(e)}")
+
+def send_email_alert_async(recipient, message, html_message=None):
+    # Send email alert asynchronously
+    threading.Thread(target=send_email_alert, args=(recipient, message, html_message)).start()
+    
+    # Read recipient phone number from .env dynamically, default to 8125113073
+    alert_phone = "8125113073"
+    dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+    if os.path.exists(dotenv_path):
+        try:
+            with open(dotenv_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        parts = line.split('=', 1)
+                        if len(parts) == 2:
+                            key = parts[0].strip()
+                            val = parts[1].strip().strip('\"\'')
+                            if key == 'ALERT_PHONE_NUMBER':
+                                alert_phone = val
+        except Exception as e:
+            print(f"Error reading ALERT_PHONE_NUMBER dynamically: {str(e)}")
+            
+    # Send WhatsApp alert asynchronously
+    threading.Thread(target=send_whatsapp_alert, args=(alert_phone, message)).start()
 
 def parse_date(date_str):
     return datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -123,6 +344,249 @@ def update_all_batch_statuses(conn, current_date=None):
                 
         cur.execute("UPDATE food_batches SET status = ? WHERE batch_id = ?", (status, b_id))
     conn.commit()
+    
+    # Trigger checks automatically whenever statuses are updated
+    check_and_trigger_alerts(conn)
+
+def check_and_trigger_alerts(conn):
+    # 1. Check Low Stock for all products
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT product_id, name FROM products")
+        products = cur.fetchall()
+        for prod in products:
+            p_id = prod['product_id']
+            p_name = prod['name']
+            
+            stock_row = conn.execute("""
+                SELECT SUM(current_stock) as total_stock 
+                FROM food_batches 
+                WHERE product_id = ? AND status IN ('Active', 'Near Expiry')
+            """, (p_id,)).fetchone()
+            total_stock = stock_row['total_stock'] or 0
+            if total_stock < 5:
+                # Unique plain text key for duplicate check and database logging
+                alert_key = f"Low Stock Alert: '{p_name}' total stock is at {total_stock} units. Safety threshold is 5!"
+                
+                # Check duplicate in last 24 hours
+                dup = conn.execute("""
+                    SELECT 1 FROM notifications_log 
+                    WHERE message = ? AND sent_at >= datetime('now', '-1 day')
+                """, (alert_key,)).fetchone()
+                
+                if not dup:
+                    # Log to DB log
+                    conn.execute("""
+                        INSERT INTO notifications_log (recipient, channel, message) 
+                        VALUES (?, 'Email', ?)
+                    """, ("sharadhastores4@gmail.com", alert_key))
+                    conn.commit()
+                    
+                    # Professional WhatsApp plain text message
+                    whatsapp_msg = f"📦 *SHARADHA STORES - LOW STOCK ALERT*\n\n*Product:* {p_name}\n*Current Stock:* {total_stock} units\n*Safety Threshold:* 5 units\n\n_Action Required: Stock levels are below the safety limit. Please schedule a production batch._"
+                    
+                    # Professional Email HTML template
+                    html_msg = f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head><meta charset="utf-8"></head>
+                    <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #2D3748; line-height: 1.6; padding: 20px; background-color: #F7FAFC; margin: 0;">
+                        <div style="max-width: 600px; margin: 0 auto; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); background-color: #ffffff; border: 1px solid #E2E8F0;">
+                            <div style="background: linear-gradient(135deg, #DD6B20 0%, #ED8936 100%); padding: 30px; text-align: center;">
+                                <span style="font-size: 48px;">📦</span>
+                                <h2 style="margin: 10px 0 0 0; color: #ffffff; font-weight: 700; letter-spacing: 0.5px; font-size: 24px; text-transform: uppercase;">Low Stock Warning</h2>
+                            </div>
+                            <div style="padding: 35px;">
+                                <p style="font-size: 16px; margin: 0 0 24px 0; color: #4A5568;">Hello Administrator,</p>
+                                <p style="font-size: 16px; margin: 0 0 24px 0; color: #4A5568;">The inventory check has detected that a product has fallen below its safety threshold:</p>
+                                <div style="background-color: #FFFAF0; border-left: 4px solid #DD6B20; padding: 20px; border-radius: 6px; margin-bottom: 28px;">
+                                    <table style="width: 100%; border-collapse: collapse;">
+                                        <tr>
+                                            <td style="padding: 6px 0; font-weight: 600; color: #718096; width: 140px; font-size: 14px;">PRODUCT</td>
+                                            <td style="padding: 6px 0; font-weight: 700; color: #1A202C; font-size: 15px;">{p_name}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 6px 0; font-weight: 600; color: #718096; font-size: 14px;">CURRENT STOCK</td>
+                                            <td style="padding: 6px 0; font-weight: 700; color: #E53E3E; font-size: 15px;">{total_stock} units</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 6px 0; font-weight: 600; color: #718096; font-size: 14px;">SAFETY THRESHOLD</td>
+                                            <td style="padding: 6px 0; font-weight: 600; color: #4A5568; font-size: 15px;">5 units</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                                <p style="font-size: 15px; margin: 0 0 28px 0; color: #4A5568;">Please schedule a production batch as soon as possible to replenish inventory and prevent stockouts for customers.</p>
+                                <div style="text-align: center; margin-bottom: 10px;">
+                                    <a href="http://localhost:5173/" style="background-color: #DD6B20; color: #ffffff; padding: 12px 28px; border-radius: 6px; font-weight: 600; text-decoration: none; font-size: 15px; display: inline-block;">Go to Admin Dashboard</a>
+                                </div>
+                            </div>
+                            <div style="background-color: #EDF2F7; padding: 20px; text-align: center; font-size: 12px; color: #718096; border-top: 1px solid #E2E8F0;">
+                                This is an automated notification from your Sharadha Stores Batch Inventory Tracker.
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                    """
+                    
+                    send_email_alert_async("sharadhastores4@gmail.com", whatsapp_msg, html_msg)
+    except Exception as e:
+        print(f"Error in Low Stock checks: {str(e)}")
+
+    # 2. Check Expiry/Near Expiry for all active batches
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT b.batch_code, b.expiry_date, b.current_stock, b.status, p.name as product_name
+            FROM food_batches b
+            JOIN products p ON b.product_id = p.product_id
+            WHERE b.status IN ('Near Expiry', 'Expired') AND b.current_stock > 0
+        """)
+        batches = cur.fetchall()
+        for b in batches:
+            b_code = b['batch_code']
+            exp_date_str = b['expiry_date']
+            stock = b['current_stock']
+            status = b['status']
+            p_name = b['product_name']
+            
+            if status == 'Expired':
+                alert_key = f"Expired Batch Alert: Batch '{b_code}' of '{p_name}' expired on {exp_date_str}. Current stock: {stock} units."
+                
+                # WhatsApp
+                whatsapp_msg = f"🔴 *SHARADHA STORES - EXPIRED BATCH ALERT*\n\n*Product:* {p_name}\n*Batch Code:* {b_code}\n*Expired On:* {exp_date_str}\n*Wasted Stock:* {stock} units\n\n_Action Required: Batch has expired. Please remove from active inventory immediately to avoid food safety issues._"
+                
+                # Email HTML
+                html_msg = f"""
+                <!DOCTYPE html>
+                <html>
+                <head><meta charset="utf-8"></head>
+                <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #2D3748; line-height: 1.6; padding: 20px; background-color: #F7FAFC; margin: 0;">
+                    <div style="max-width: 600px; margin: 0 auto; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); background-color: #ffffff; border: 1px solid #E2E8F0;">
+                        <div style="background: linear-gradient(135deg, #E53E3E 0%, #FEB2B2 100%); padding: 30px; text-align: center;">
+                            <span style="font-size: 48px;">🔴</span>
+                            <h2 style="margin: 10px 0 0 0; color: #ffffff; font-weight: 700; letter-spacing: 0.5px; font-size: 24px; text-transform: uppercase;">Expired Batch Warning</h2>
+                        </div>
+                        <div style="padding: 35px;">
+                            <p style="font-size: 16px; margin: 0 0 24px 0; color: #4A5568;">Hello Administrator,</p>
+                            <p style="font-size: 16px; margin: 0 0 24px 0; color: #4A5568;">The inventory check has identified a batch that has passed its expiration date and must be removed from stock:</p>
+                            <div style="background-color: #FFF5F5; border-left: 4px solid #E53E3E; padding: 20px; border-radius: 6px; margin-bottom: 28px;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #718096; width: 140px; font-size: 14px;">PRODUCT</td>
+                                        <td style="padding: 6px 0; font-weight: 700; color: #1A202C; font-size: 15px;">{p_name}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #718096; font-size: 14px;">BATCH CODE</td>
+                                        <td style="padding: 6px 0; font-weight: 700; color: #1A202C; font-size: 15px;">{b_code}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #718096; font-size: 14px;">EXPIRED ON</td>
+                                        <td style="padding: 6px 0; font-weight: 700; color: #E53E3E; font-size: 15px;">{exp_date_str}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #718096; font-size: 14px;">EXPIRED STOCK</td>
+                                        <td style="padding: 6px 0; font-weight: 700; color: #4A5568; font-size: 15px;">{stock} units</td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <p style="font-size: 15px; margin: 0 0 28px 0; color: #4A5568; font-weight: 600;">Action Required: Please discard this batch immediately and update the inventory records to prevent selling expired food products to customers.</p>
+                            <div style="text-align: center; margin-bottom: 10px;">
+                                <a href="http://localhost:5173/" style="background-color: #E53E3E; color: #ffffff; padding: 12px 28px; border-radius: 6px; font-weight: 600; text-decoration: none; font-size: 15px; display: inline-block;">Manage Inventory</a>
+                            </div>
+                        </div>
+                        <div style="background-color: #EDF2F7; padding: 20px; text-align: center; font-size: 12px; color: #718096; border-top: 1px solid #E2E8F0;">
+                            This is an automated notification from your Sharadha Stores Batch Inventory Tracker.
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """
+            else: # Near Expiry
+                try:
+                    exp_date = datetime.datetime.strptime(exp_date_str, "%Y-%m-%d").date()
+                    days_left = (exp_date - datetime.date.today()).days
+                except Exception:
+                    days_left = "?"
+                alert_key = f"Near Expiry Alert: Batch '{b_code}' of '{p_name}' expires on {exp_date_str} ({days_left} days left). Current stock: {stock} units."
+                
+                # WhatsApp
+                whatsapp_msg = f"⚠️ *SHARADHA STORES - NEAR EXPIRY ALERT*\n\n*Product:* {p_name}\n*Batch Code:* {b_code}\n*Expiry Date:* {exp_date_str} ({days_left} days remaining)\n*Current Stock:* {stock} units\n\n_Action Required: Batch is nearing expiry. Consider offering a discount or combo pack to clear inventory._"
+                
+                # Email HTML
+                html_msg = f"""
+                <!DOCTYPE html>
+                <html>
+                <head><meta charset="utf-8"></head>
+                <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #2D3748; line-height: 1.6; padding: 20px; background-color: #F7FAFC; margin: 0;">
+                    <div style="max-width: 600px; margin: 0 auto; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); background-color: #ffffff; border: 1px solid #E2E8F0;">
+                        <div style="background: linear-gradient(135deg, #D69E2E 0%, #ECC94B 100%); padding: 30px; text-align: center;">
+                            <span style="font-size: 48px;">⚠️</span>
+                            <h2 style="margin: 10px 0 0 0; color: #ffffff; font-weight: 700; letter-spacing: 0.5px; font-size: 24px; text-transform: uppercase;">Near Expiry Alert</h2>
+                        </div>
+                        <div style="padding: 35px;">
+                            <p style="font-size: 16px; margin: 0 0 24px 0; color: #4A5568;">Hello Administrator,</p>
+                            <p style="font-size: 16px; margin: 0 0 24px 0; color: #4A5568;">The inventory check has identified a production batch that is approaching its expiration date:</p>
+                            <div style="background-color: #FEFCBF; border-left: 4px solid #D69E2E; padding: 20px; border-radius: 6px; margin-bottom: 28px;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #718096; width: 140px; font-size: 14px;">PRODUCT</td>
+                                        <td style="padding: 6px 0; font-weight: 700; color: #1A202C; font-size: 15px;">{p_name}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #718096; font-size: 14px;">BATCH CODE</td>
+                                        <td style="padding: 6px 0; font-weight: 700; color: #1A202C; font-size: 15px;">{b_code}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #718096; font-size: 14px;">EXPIRY DATE</td>
+                                        <td style="padding: 6px 0; font-weight: 700; color: #E53E3E; font-size: 15px;">{exp_date_str} ({days_left} days left)</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #718096; font-size: 14px;">CURRENT STOCK</td>
+                                        <td style="padding: 6px 0; font-weight: 700; color: #4A5568; font-size: 15px;">{stock} units</td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <p style="font-size: 15px; margin: 0 0 28px 0; color: #4A5568;">To prevent wastage, we recommend placing this batch on promotion, creating a discount combo pack, or prioritizing it for immediate dispatch.</p>
+                            <div style="text-align: center; margin-bottom: 10px;">
+                                <a href="http://localhost:5173/" style="background-color: #D69E2E; color: #ffffff; padding: 12px 28px; border-radius: 6px; font-weight: 600; text-decoration: none; font-size: 15px; display: inline-block;">Manage Batches</a>
+                            </div>
+                        </div>
+                        <div style="background-color: #EDF2F7; padding: 20px; text-align: center; font-size: 12px; color: #718096; border-top: 1px solid #E2E8F0;">
+                            This is an automated notification from your Sharadha Stores Batch Inventory Tracker.
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """
+            
+            # Check duplicate in last 24 hours
+            dup = conn.execute("""
+                SELECT 1 FROM notifications_log 
+                WHERE message = ? AND sent_at >= datetime('now', '-1 day')
+            """, (alert_key,)).fetchone()
+            
+            if not dup:
+                conn.execute("""
+                    INSERT INTO notifications_log (recipient, channel, message) 
+                    VALUES (?, 'Email', ?)
+                """, ("sharadhastores4@gmail.com", alert_key))
+                conn.commit()
+                
+                send_email_alert_async("sharadhastores4@gmail.com", whatsapp_msg, html_msg)
+    except Exception as e:
+        print(f"Error in Expiry checks: {str(e)}")
+
+def run_background_scheduler():
+    import time
+    time.sleep(5)  # Wait for Flask app to boot up fully
+    while True:
+        try:
+            conn = get_db()
+            update_all_batch_statuses(conn)
+            conn.close()
+        except Exception as e:
+            print(f"Background Scheduler Error: {str(e)}")
+        time.sleep(60) # Run check once every 60 seconds
 
 # Global try/catch error handling
 @app.errorhandler(400)
@@ -1863,5 +2327,11 @@ def test_email_connection():
 if __name__ == '__main__':
     # Initialize the database on startup just in case
     init_db()
+    
+    # Start background scheduler thread
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
+        threading.Thread(target=run_background_scheduler, daemon=True).start()
+        print("Background Scheduler Started.")
+        
     # Run the dev server on port 5000
     app.run(debug=True, port=5000)

@@ -476,6 +476,9 @@ export default function App() {
   const [paymentMethod, setPaymentMethod] = useState('COD')
   const [upiPaymentModalDetails, setUpiPaymentModalDetails] = useState(null)
   const [isPaymentReceived, setIsPaymentReceived] = useState(false)
+  const [hoveredCategory, setHoveredCategory] = useState(null)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [codSuccessDetails, setCodSuccessDetails] = useState(null)
 
 
 
@@ -824,8 +827,27 @@ export default function App() {
     }
   }
 
-  const handleCheckout = async () => {
+  const handleCheckoutClick = () => {
     if (cart.length === 0) return
+    const isLegacyDefault = selectedCartAddressId === 'default';
+    if (
+      !cartAddressFlat.trim() ||
+      (!isLegacyDefault && (
+        !cartAddressArea.trim() ||
+        !cartAddressPincode.trim() ||
+        !cartAddressCity.trim() ||
+        !cartAddressState.trim()
+      ))
+    ) {
+      showToast('All address fields are required for checkout.', 'danger')
+      return
+    }
+    setShowPaymentModal(true)
+  }
+
+  const handleCheckout = async (chosenMethod) => {
+    if (cart.length === 0) return
+    const activeMethod = chosenMethod || 'COD';
     const isLegacyDefault = selectedCartAddressId === 'default';
     if (
       !cartAddressFlat.trim() ||
@@ -865,10 +887,10 @@ export default function App() {
       saveAddressBook(newBook)
     }
     
-    const payloadPaymentMethod = paymentMethod === 'COD' ? 'COD' : 'UPI - QR Code'
+    setPaymentMethod(activeMethod);
     
     try {
-      if (paymentMethod === 'Razorpay') {
+      if (activeMethod === 'Razorpay') {
         const response = await fetch('/api/orders/process', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -953,6 +975,7 @@ export default function App() {
         return;
       }
 
+      // Cash on Delivery
       const response = await fetch('/api/orders/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -964,7 +987,7 @@ export default function App() {
             price_id: item.price_id,
             quantity: item.quantity,
           })),
-          payment_method: payloadPaymentMethod,
+          payment_method: 'COD',
         }),
       })
 
@@ -972,11 +995,15 @@ export default function App() {
       if (response.ok) {
         setCheckoutStatus('success')
         setCart([])
-        
+        setCodSuccessDetails({ order_id: result.order_id })
         showToast('Order placed successfully! Stocks updated via FEFO rules.', 'success')
         
         fetchData()
-        setTimeout(() => setCheckoutStatus(null), 3000)
+        setTimeout(() => {
+          setCodSuccessDetails(null)
+          setCheckoutStatus(null)
+          setActiveTab('my-orders')
+        }, 3000)
       } else {
         setCheckoutStatus('failed')
         showToast(result.error || 'Checkout failed due to insufficient stock.', 'danger')
@@ -2672,96 +2699,96 @@ export default function App() {
               Continue Shopping
             </button>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', width: '100%' }}>
-              {/* Top: Cart Items List (Full Width) */}
-              <div className="glass-card" style={{ padding: '2.5rem 3rem', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <h2 style={{ fontSize: '1.6rem', color: 'var(--text-title)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <svg style={{ width: '24px', height: '24px', color: 'var(--accent-primary)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
-                      Your Shopping Cart
-                    </h2>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Review your items and adjust quantities.</p>
+            <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start', flexWrap: 'wrap', width: '100%' }}>
+              {/* Left Column: Cart items & address book */}
+              <div style={{ flex: '1.6 1 600px', display: 'flex', flexDirection: 'column', gap: '2rem', minWidth: '0' }}>
+                {/* Cart Items List */}
+                <div className="glass-card" style={{ padding: '2.5rem 3rem', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <h2 style={{ fontSize: '1.6rem', color: 'var(--text-title)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <svg style={{ width: '24px', height: '24px', color: 'var(--accent-primary)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+                        Your Shopping Cart
+                      </h2>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Review your items and adjust quantities.</p>
+                    </div>
+                    {cart.length > 0 && (
+                      <button 
+                        className="btn btn-secondary btn-sm" 
+                        onClick={() => setCart([])}
+                        style={{ border: '1px solid var(--accent-danger)', color: 'var(--accent-danger)', background: 'transparent', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <svg style={{ width: '14px', height: '14px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                        Clear Cart
+                      </button>
+                    )}
                   </div>
-                  {cart.length > 0 && (
-                    <button 
-                      className="btn btn-secondary btn-sm" 
-                      onClick={() => setCart([])}
-                      style={{ border: '1px solid var(--accent-danger)', color: 'var(--accent-danger)', background: 'transparent', display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      <svg style={{ width: '14px', height: '14px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                      Clear Cart
-                    </button>
+
+                  {cart.length === 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem', padding: '3rem 1rem', textAlign: 'center' }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: '64px', height: '64px', opacity: 0.3, color: 'var(--text-muted)' }}><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '1rem' }}>Your shopping cart is empty.</p>
+                      <button className="btn btn-primary btn-sm" onClick={() => setActiveTab('ecommerce')}>Go to Storefront</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                      {cart.map((item, idx) => (
+                        <div 
+                          key={idx} 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '1.5rem', 
+                            padding: '1.25rem', 
+                            border: '1px solid var(--border-color)', 
+                            borderRadius: 'var(--radius-md)',
+                            background: 'rgba(255, 255, 255, 0.01)',
+                            transition: 'var(--transition-smooth)'
+                          }}
+                        >
+                          <img 
+                            src={item.image_url || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80"} 
+                            alt="" 
+                            style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}
+                          />
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-title)' }}>{item.name}</span>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Pack: {item.qty_desc}</span>
+                            <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent-primary)' }}>Rs. {item.price} each</span>
+                          </div>
+                          
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '0.4rem 0.8rem' }}>
+                            <button 
+                              className="cart-qty-btn" 
+                              onClick={() => updateCartQuantity(idx, -1)}
+                              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px' }}
+                            >-</button>
+                            <span style={{ fontWeight: 700, fontSize: '1rem', width: '25px', textAlign: 'center', color: 'var(--text-title)' }}>
+                              {item.quantity}
+                            </span>
+                            <button 
+                              className="cart-qty-btn" 
+                              onClick={() => updateCartQuantity(idx, 1)}
+                              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px' }}
+                            >+</button>
+                          </div>
+                          
+                          <button 
+                            className="btn btn-secondary btn-sm" 
+                            onClick={() => updateCartQuantity(idx, -item.quantity)}
+                            style={{ padding: '0.5rem', minWidth: 'auto', border: '1px solid var(--accent-danger)', color: 'var(--accent-danger)', background: 'rgba(255, 90, 95, 0.02)' }}
+                            title="Remove item"
+                          >
+                            <svg style={{ width: '16px', height: '16px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
 
-                {cart.length === 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem', padding: '3rem 1rem', textAlign: 'center' }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: '64px', height: '64px', opacity: 0.3, color: 'var(--text-muted)' }}><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '1rem' }}>Your shopping cart is empty.</p>
-                    <button className="btn btn-primary btn-sm" onClick={() => setActiveTab('ecommerce')}>Go to Storefront</button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                    {cart.map((item, idx) => (
-                      <div 
-                        key={idx} 
-                        style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '1.5rem', 
-                          padding: '1.25rem', 
-                          border: '1px solid var(--border-color)', 
-                          borderRadius: 'var(--radius-md)',
-                          background: 'rgba(255, 255, 255, 0.01)',
-                          transition: 'var(--transition-smooth)'
-                        }}
-                      >
-                        <img 
-                          src={item.image_url || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80"} 
-                          alt="" 
-                          style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}
-                        />
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <span style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-title)' }}>{item.name}</span>
-                          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Pack: {item.qty_desc}</span>
-                          <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent-primary)' }}>Rs. {item.price} each</span>
-                        </div>
-                        
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '0.4rem 0.8rem' }}>
-                          <button 
-                            className="cart-qty-btn" 
-                            onClick={() => updateCartQuantity(idx, -1)}
-                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px' }}
-                          >-</button>
-                          <span style={{ fontWeight: 700, fontSize: '1rem', width: '25px', textAlign: 'center', color: 'var(--text-title)' }}>
-                            {item.quantity}
-                          </span>
-                          <button 
-                            className="cart-qty-btn" 
-                            onClick={() => updateCartQuantity(idx, 1)}
-                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px' }}
-                          >+</button>
-                        </div>
-                        
-                        <button 
-                          className="btn btn-secondary btn-sm" 
-                          onClick={() => updateCartQuantity(idx, -item.quantity)}
-                          style={{ padding: '0.5rem', minWidth: 'auto', border: '1px solid var(--accent-danger)', color: 'var(--accent-danger)', background: 'rgba(255, 90, 95, 0.02)' }}
-                          title="Remove item"
-                        >
-                          <svg style={{ width: '16px', height: '16px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Bottom Section: Address Selection & Summary Stacked */}
-              {cart.length > 0 && (
-                <>
-                  {/* Middle Section: Delivery Address Card */}
+                {/* Delivery Address Card */}
+                {cart.length > 0 && (
                   <div className="glass-card" style={{ padding: '2.5rem 3rem', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                     {isCartAddressFormOpen ? (
                       /* Inline Address Form in Cart */
@@ -2903,40 +2930,12 @@ export default function App() {
                       </div>
                     )}
                   </div>
- 
-                  {/* Payment Method Card */}
-                  <div className="glass-card" style={{ padding: '2.5rem 3rem', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                    <h3 style={{ fontSize: '1.3rem', color: 'var(--text-title)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '0.25rem' }}>
-                      Payment Method
-                    </h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)', cursor: 'pointer', fontSize: '0.95rem' }}>
-                        <input 
-                          type="radio" 
-                          name="paymentMethod" 
-                          value="COD" 
-                          checked={paymentMethod === 'COD'} 
-                          onChange={() => setPaymentMethod('COD')} 
-                          style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
-                        />
-                        Cash on Delivery (COD)
-                      </label>
-                      
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)', cursor: 'pointer', fontSize: '0.95rem' }}>
-                        <input 
-                          type="radio" 
-                          name="paymentMethod" 
-                          value="Razorpay" 
-                          checked={paymentMethod === 'Razorpay'} 
-                          onChange={() => setPaymentMethod('Razorpay')} 
-                          style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
-                        />
-                        Pay Online (UPI / Card / NetBanking)
-                      </label>
-                    </div>
-                  </div>
- 
-                  {/* Bottom Section: Order Summary Card & Checkout Button */}
+                )}
+              </div>
+
+              {/* Right Column: Order Summary Card */}
+              {cart.length > 0 && (
+                <div style={{ flex: '1 1 350px', position: 'sticky', top: '2rem', display: 'flex', flexDirection: 'column', gap: '2rem', minWidth: '300px' }}>
                   <div className="glass-card" style={{ padding: '2.5rem 3rem', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                     <h3 style={{ fontSize: '1.3rem', color: 'var(--text-title)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '0.25rem' }}>
                       Order Summary
@@ -2955,7 +2954,7 @@ export default function App() {
                         <strong style={{ color: 'var(--accent-primary)' }}>Rs. {cart.reduce((a, c) => a + c.price * c.quantity, 0)}</strong>
                       </div>
                     </div>
- 
+
                     <div style={{ marginTop: '1rem' }}>
                       {checkoutStatus === 'processing' ? (
                         <button className="btn btn-primary btn-full" style={{ padding: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} disabled>
@@ -2970,12 +2969,12 @@ export default function App() {
                       ) : (
                         <button 
                           className="btn btn-primary btn-full" 
-                          onClick={handleCheckout} 
+                          onClick={handleCheckoutClick} 
                           disabled={addressBook.length === 0}
                           style={{ padding: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                         >
                           <svg style={{ width: '16px', height: '16px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
-                          {paymentMethod === 'COD' ? 'Confirm Order (COD)' : 'Confirm & Pay (UPI)'}
+                          Checkout Now
                         </button>
                       )}
                       <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '0.75rem', lineHeight: '1.3' }}>
@@ -2983,7 +2982,7 @@ export default function App() {
                       </p>
                     </div>
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>
@@ -3120,6 +3119,7 @@ export default function App() {
                       className={`category-btn ${isActive ? 'active' : ''}`}
                       onClick={() => setSelectedCategory(cat)}
                       style={{
+                        position: 'relative',
                         width: 'auto',
                         padding: '0.5rem 1.2rem',
                         borderRadius: '24px',
@@ -3861,38 +3861,37 @@ export default function App() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                 
                 {/* 1. Batch Entry Form */}
-                <div className="glass-card">
-                  <h2 style={{ marginBottom: '1.25rem' }}>Create Production Batch</h2>
+                 <div className="glass-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
+                    <h2 style={{ margin: 0 }}>Create Production Batch</h2>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      onClick={() => {
+                        setNewProductIngSearch('')
+                        setIsCreateProductModalOpen(true)
+                      }}
+                    >
+                      <svg style={{ width: '12px', height: '12px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                      New Product
+                    </button>
+                  </div>
                   
                   <form onSubmit={handleCreateBatchSubmit}>
                     <div className="form-inline-group">
                       <div className="form-group">
                         <label className="form-label">Product Name *</label>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <select
-                            className="form-select"
-                            value={formProductId}
-                            onChange={(e) => handleFormProductChange(e.target.value)}
-                            style={{ flexGrow: 1 }}
-                          >
-                            <option value="">-- Select Product --</option>
-                            {products.map((p) => (
-                              <option key={p.product_id} value={p.product_id}>{p.name}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                            onClick={() => {
-                              setNewProductIngSearch('')
-                              setIsCreateProductModalOpen(true)
-                            }}
-                          >
-                            <svg style={{ width: '12px', height: '12px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                            New Product
-                          </button>
-                        </div>
+                        <select
+                          className="form-select"
+                          value={formProductId}
+                          onChange={(e) => handleFormProductChange(e.target.value)}
+                        >
+                          <option value="">-- Select Product --</option>
+                          {products.map((p) => (
+                            <option key={p.product_id} value={p.product_id}>{p.name}</option>
+                          ))}
+                        </select>
                         {formErrors.productId && <span style={{ color: 'var(--accent-danger)', fontSize: '0.75rem' }}>{formErrors.productId}</span>}
                       </div>
 
@@ -5616,6 +5615,102 @@ export default function App() {
         </div>
       )}
 
+      {/* Payment Method Selector Modal */}
+      {showPaymentModal && (
+        <div className="modal-overlay" onClick={() => setShowPaymentModal(false)}>
+          <div 
+            className="modal-content animate-scale-up" 
+            style={{ maxWidth: '450px', width: '90%', padding: '2rem' }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header" style={{ borderBottom: 'none', padding: '0 0 1rem 0' }}>
+              <h3 style={{ fontSize: '1.4rem', color: 'var(--text-title)', margin: 0 }}>Select Payment Method</h3>
+              <button 
+                className="btn btn-secondary btn-sm" 
+                onClick={() => setShowPaymentModal(false)}
+                style={{ padding: '0.25rem', minWidth: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <svg style={{ width: '14px', height: '14px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1rem 0 0 0' }}>
+              <button 
+                className="btn btn-secondary" 
+                style={{ 
+                  padding: '1.25rem', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'flex-start', 
+                  gap: '6px', 
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid var(--border-color)',
+                  textAlign: 'left',
+                  width: '100%',
+                  borderRadius: 'var(--radius-md)',
+                  transition: 'var(--transition-smooth)'
+                }}
+                onClick={() => {
+                  setShowPaymentModal(false);
+                  const isConfirmed = window.confirm("Are you sure you want to place this order using Cash on Delivery?");
+                  if (isConfirmed) {
+                    handleCheckout('COD');
+                  }
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                  e.currentTarget.style.background = 'rgba(255, 159, 28, 0.04)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <svg style={{ width: '20px', height: '20px', color: 'var(--accent-primary)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="12" cy="12" r="2"></circle><path d="M6 12h.01M18 12h.01"></path></svg>
+                  <span style={{ fontWeight: 600, color: 'var(--text-title)', fontSize: '1.05rem' }}>Cash on Delivery</span>
+                </div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Pay in cash upon delivery of your items.</span>
+              </button>
+
+              <button 
+                className="btn btn-secondary" 
+                style={{ 
+                  padding: '1.25rem', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'flex-start', 
+                  gap: '6px', 
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid var(--border-color)',
+                  textAlign: 'left',
+                  width: '100%',
+                  borderRadius: 'var(--radius-md)',
+                  transition: 'var(--transition-smooth)'
+                }}
+                onClick={() => {
+                  setShowPaymentModal(false);
+                  handleCheckout('Razorpay');
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                  e.currentTarget.style.background = 'rgba(255, 159, 28, 0.04)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <svg style={{ width: '20px', height: '20px', color: 'var(--accent-primary)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+                  <span style={{ fontWeight: 600, color: 'var(--text-title)', fontSize: '1.05rem' }}>Card / UPI / NetBanking</span>
+                </div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Secure payment checkout powered by Razorpay.</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 2. Subscription Frequency Selector Modal */}
       {subscriptionProduct && (
         <div className="modal-overlay" onClick={() => setSubscriptionProduct(null)}>
@@ -5877,6 +5972,31 @@ export default function App() {
               </div>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                 Redirecting to the home page...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. COD Success Modal */}
+      {codSuccessDetails && (
+        <div className="modal-overlay">
+          <div className="modal-content animate-scale-up" style={{ maxWidth: '450px', width: '90%', textAlign: 'center', padding: '2.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.25rem', padding: '1rem 0' }}>
+              <div className="success-animation-container">
+                <svg className="checkmark-svg" viewBox="0 0 52 52">
+                  <circle className="checkmark-circle" cx="26" cy="26" r="25" />
+                  <path className="checkmark-check" d="M14.1 27.2l7.1 7.2 16.7-16.8" />
+                </svg>
+              </div>
+              <h3 style={{ fontSize: '1.45rem', color: 'var(--accent-secondary)', fontWeight: 700, marginTop: '0.5rem', fontFamily: 'Outfit' }}>
+                Order Confirmed!
+              </h3>
+              <div style={{ fontSize: '1rem', color: 'var(--text-main)' }}>
+                Order <strong>#{codSuccessDetails.order_id}</strong> Placed Successfully!
+              </div>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                Redirecting to your orders...
               </p>
             </div>
           </div>
