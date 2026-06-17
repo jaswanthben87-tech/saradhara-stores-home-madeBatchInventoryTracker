@@ -382,6 +382,81 @@ export default function App() {
   useEffect(() => {
     sessionStorage.setItem('activeTab', activeTab)
   }, [activeTab])
+
+  // 1. Sync URL path to activeTab / login state when component mounts and on popstate
+  useEffect(() => {
+    const syncRouteWithUrl = () => {
+      const path = window.location.pathname;
+      const user = currentUser;
+      
+      if (!user) {
+        if (path !== '/login') {
+          window.history.replaceState(null, '', '/login');
+        }
+        return;
+      }
+      
+      // User is logged in
+      if (user.role === 'admin') {
+        if (path !== '/app/admin') {
+          window.history.replaceState(null, '', '/app/admin');
+        }
+        setActiveTab('admin');
+        return;
+      }
+      
+      // Customer role
+      if (path.startsWith('/app/')) {
+        const subPath = path.substring(5); // Get part after /app/
+        if (subPath === 'admin') {
+          // Customers cannot view admin, redirect to store
+          window.history.replaceState(null, '', '/app/store');
+          setActiveTab('ecommerce');
+        } else if (['store', 'cart', 'my-orders', 'settings'].includes(subPath)) {
+          const tabMap = {
+            'store': 'ecommerce',
+            'cart': 'cart',
+            'my-orders': 'my-orders',
+            'settings': 'settings'
+          };
+          setActiveTab(tabMap[subPath]);
+        } else {
+          // Unknown subpath, fallback to store
+          window.history.replaceState(null, '', '/app/store');
+          setActiveTab('ecommerce');
+        }
+      } else {
+        // Not starting with /app/, redirect to store
+        window.history.replaceState(null, '', '/app/store');
+        setActiveTab('ecommerce');
+      }
+    };
+
+    syncRouteWithUrl();
+    window.addEventListener('popstate', syncRouteWithUrl);
+    return () => window.removeEventListener('popstate', syncRouteWithUrl);
+  }, [currentUser]);
+
+  // 2. Sync URL path when activeTab changes
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const path = window.location.pathname;
+    const tabMap = {
+      'ecommerce': 'store',
+      'cart': 'cart',
+      'my-orders': 'my-orders',
+      'settings': 'settings',
+      'admin': 'admin'
+    };
+    
+    const expectedSubPath = tabMap[activeTab] || 'store';
+    const expectedPath = `/app/${expectedSubPath}`;
+    
+    if (path !== expectedPath) {
+      window.history.pushState(null, '', expectedPath);
+    }
+  }, [activeTab, currentUser]);
   const [adminSubTab, setAdminSubTab] = useState('dashboard') // 'dashboard' | 'analytics'
   const [hoveredDailyPoint, setHoveredDailyPoint] = useState(null) // { x, y, day, revenue, orders }
   const [hoveredMonthlyBar, setHoveredMonthlyBar] = useState(null) // { x, y, month, revenue, orders }
