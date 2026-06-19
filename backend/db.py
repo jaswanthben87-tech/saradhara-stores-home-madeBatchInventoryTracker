@@ -26,6 +26,18 @@ def init_db():
             conn.execute("SELECT password FROM customers LIMIT 1")
         except sqlite3.OperationalError:
             conn.execute("ALTER TABLE customers ADD COLUMN password TEXT NOT NULL DEFAULT 'customerpassword'")
+            
+        # Create admin_credentials table if not exists and seed default admin
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS admin_credentials (
+                username TEXT PRIMARY KEY,
+                password TEXT NOT NULL
+            );
+        """)
+        conn.execute("""
+            INSERT OR IGNORE INTO admin_credentials (username, password)
+            VALUES ('admin@sharadhastores.com', 'adminpassword');
+        """)
         conn.commit()
     print("Database initialized successfully.")
 

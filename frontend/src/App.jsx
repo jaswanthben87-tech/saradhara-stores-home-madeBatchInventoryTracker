@@ -793,6 +793,10 @@ export default function App() {
   const [editIngredientIsReferenced, setEditIngredientIsReferenced] = useState(false)
   const [batchesSearchQuery, setBatchesSearchQuery] = useState('') // For searching admin batches table
   const [orderSearchQuery, setOrderSearchQuery] = useState('')
+  const [changePasswordCurrent, setChangePasswordCurrent] = useState('')
+  const [changePasswordNew, setChangePasswordNew] = useState('')
+  const [changePasswordConfirm, setChangePasswordConfirm] = useState('')
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
   
   // Shopping Cart States
   const [cart, setCart] = useState([])
@@ -1178,6 +1182,48 @@ export default function App() {
       }
     } catch (err) {
       showToast('Connection error during profile update.', 'danger')
+    }
+  }
+
+  const handleChangePasswordSubmit = async (e) => {
+    e.preventDefault()
+    if (!changePasswordCurrent || !changePasswordNew || !changePasswordConfirm) {
+      showToast('All fields are required.', 'danger')
+      return
+    }
+    if (changePasswordNew !== changePasswordConfirm) {
+      showToast('New passwords do not match.', 'danger')
+      return
+    }
+    if (changePasswordNew.length < 6) {
+      showToast('New password must be at least 6 characters long.', 'danger')
+      return
+    }
+    setIsUpdatingPassword(true)
+    try {
+      const res = await fetch('/api/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: currentUser.email || (currentUser.role === 'admin' ? 'admin@sharadhastores.com' : ''),
+          role: currentUser.role,
+          current_password: changePasswordCurrent,
+          new_password: changePasswordNew
+        })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setChangePasswordCurrent('')
+        setChangePasswordNew('')
+        setChangePasswordConfirm('')
+        showToast(data.message || 'Password updated successfully!', 'success')
+      } else {
+        showToast(data.error || 'Failed to change password.', 'danger')
+      }
+    } catch (err) {
+      showToast('Connection error during password update.', 'danger')
+    } finally {
+      setIsUpdatingPassword(false)
     }
   }
 
@@ -2606,29 +2652,7 @@ export default function App() {
                 <svg style={{ width: '14px', height: '14px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
               </div>
 
-              {/* AI Assistant Indicator in Header */}
-              <div 
-                className="ai-indicator animate-pulse-glow" 
-                onClick={() => setIsChatOpen(!isChatOpen)} 
-                title="AI Assistant"
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  border: isChatOpen ? '1px solid var(--accent-primary)' : '1px solid transparent',
-                  background: isChatOpen ? 'rgba(255, 159, 28, 0.1)' : 'transparent',
-                  color: isChatOpen ? 'var(--accent-primary)' : 'var(--text-main)',
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '50%',
-                  position: 'relative',
-                  padding: 0,
-                  transition: 'var(--transition-smooth)'
-                }}
-              >
-                <svg style={{ width: '15px', height: '15px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-              </div>
+
 
               <button 
                 className="btn btn-secondary btn-sm" 
@@ -2655,28 +2679,7 @@ export default function App() {
 
           {currentUser && currentUser.role === 'admin' && (
             <>
-              {/* AI Assistant Button for Admin */}
-              <button 
-                className="btn btn-secondary btn-sm" 
-                onClick={() => setIsChatOpen(!isChatOpen)}
-                title="AI Assistant"
-                style={{ 
-                  border: '1px solid var(--accent-primary)', 
-                  color: 'var(--accent-primary)', 
-                  background: isChatOpen ? 'rgba(255, 159, 28, 0.1)' : 'rgba(255, 159, 28, 0.05)',
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: 0,
-                  transition: 'var(--transition-smooth)',
-                  marginRight: '0.25rem'
-                }}
-              >
-                <svg style={{ width: '15px', height: '15px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-              </button>
+
 
               {/* Theme Toggle Button for Admin */}
               <button 
@@ -2899,6 +2902,69 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+                {/* Security & Password Card */}
+                <div className="glass-card" style={{ padding: '2.5rem 3rem', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.3rem', color: 'var(--text-title)', marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <svg style={{ width: '22px', height: '22px', color: 'var(--accent-primary)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                      Security & Password
+                    </h3>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Update your account password to keep your account secure.</p>
+                  </div>
+                  
+                  <form onSubmit={handleChangePasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 600 }}>Current Password</label>
+                        <input 
+                          type="password" 
+                          className="form-input" 
+                          required
+                          value={changePasswordCurrent}
+                          onChange={(e) => setChangePasswordCurrent(e.target.value)}
+                          placeholder="Enter current password"
+                          style={{ fontSize: '0.95rem' }}
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 600 }}>New Password</label>
+                        <input 
+                          type="password" 
+                          className="form-input" 
+                          required
+                          value={changePasswordNew}
+                          onChange={(e) => setChangePasswordNew(e.target.value)}
+                          placeholder="Min 6 characters"
+                          style={{ fontSize: '0.95rem' }}
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 600 }}>Confirm New Password</label>
+                        <input 
+                          type="password" 
+                          className="form-input" 
+                          required
+                          value={changePasswordConfirm}
+                          onChange={(e) => setChangePasswordConfirm(e.target.value)}
+                          placeholder="Re-enter new password"
+                          style={{ fontSize: '0.95rem' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                      <button 
+                        type="submit" 
+                        className="btn btn-primary"
+                        disabled={isUpdatingPassword}
+                        style={{ minWidth: '160px', padding: '0.75rem' }}
+                      >
+                        {isUpdatingPassword ? 'Updating...' : 'Update Password'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
 
                 {/* Card 2: Address Book */}
                 <div className="glass-card" style={{ padding: '2.5rem 3rem', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

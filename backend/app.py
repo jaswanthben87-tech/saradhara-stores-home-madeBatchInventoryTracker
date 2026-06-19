@@ -735,17 +735,22 @@ def handle_login():
             
         print(f"DEBUG LOGIN - Username: '{username}', Password: '{password}'", flush=True)
             
-        # 1. Check if Admin
-        if username == 'admin@sharadhastores.com' and password == 'adminpassword':
-            return jsonify({
-                "success": True,
-                "role": "admin",
-                "name": "Admin Manager",
-                "token": "token_admin_sharadha"
-            }), 200
+        conn = get_db()
+        # 1. Check if Admin in Database
+        admin = conn.execute("SELECT username, password FROM admin_credentials WHERE username = ?", (username,)).fetchone()
+        if admin:
+            admin = dict(admin)
+            if admin['password'] == password:
+                conn.close()
+                return jsonify({
+                    "success": True,
+                    "role": "admin",
+                    "name": "Admin Manager",
+                    "email": admin['username'],
+                    "token": "token_admin_sharadha"
+                }), 200
             
         # 2. Check if Customer
-        conn = get_db()
         customer = conn.execute("SELECT customer_id, name, email, password, phone, address FROM customers WHERE email = ?", (username,)).fetchone()
         
         if customer:
@@ -846,6 +851,66 @@ def update_customer_profile():
         else:
             return jsonify({"error": "Customer not found."}), 404
             
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/change-password', methods=['POST'])
+def change_password():
+    try:
+        data = request.get_json() or {}
+        email = data.get('email', '').strip()
+        role = data.get('role', '').strip()
+        current_password = data.get('current_password', '').strip()
+        new_password = data.get('new_password', '').strip()
+
+        if not email or not role or not current_password or not new_password:
+            return jsonify({"error": "All fields (email, role, current_password, new_password) are required."}), 400
+
+        if len(new_password) < 6:
+            return jsonify({"error": "New password must be at least 6 characters long."}), 400
+
+        conn = get_db()
+        
+        if role == 'admin':
+            # Check current password
+            admin = conn.execute("SELECT username, password FROM admin_credentials WHERE username = ?", (email,)).fetchone()
+            if not admin:
+                conn.close()
+                return jsonify({"error": "Admin account not found."}), 404
+            
+            admin = dict(admin)
+            if admin['password'] != current_password:
+                conn.close()
+                return jsonify({"error": "Current password is incorrect."}), 400
+                
+            # Update password
+            conn.execute("UPDATE admin_credentials SET password = ? WHERE username = ?", (new_password, email))
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "message": "Admin password updated successfully!"}), 200
+
+        elif role == 'customer':
+            # Check current password
+            customer = conn.execute("SELECT customer_id, password FROM customers WHERE email = ?", (email,)).fetchone()
+            if not customer:
+                conn.close()
+                return jsonify({"error": "Customer account not found."}), 404
+            
+            customer = dict(customer)
+            if customer['password'] != current_password:
+                conn.close()
+                return jsonify({"error": "Current password is incorrect."}), 400
+                
+            # Update password
+            conn.execute("UPDATE customers SET password = ? WHERE email = ?", (new_password, email))
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "message": "Customer password updated successfully!"}), 200
+        
+        else:
+            conn.close()
+            return jsonify({"error": "Invalid role specified."}), 400
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
