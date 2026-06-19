@@ -28,7 +28,7 @@ services:
       - type: rewrite
         source: /api/*
         # NOTE: Replace 'sharadha-stores-backend' with your actual backend service name or URL
-        destination: https://saradhara-stores-home.onrender.com/api/*
+        destination: https://sharadha-stores-home-ur38.onrender.com/api/*
       # Single Page Application routing fallback
       - type: rewrite
         source: /*

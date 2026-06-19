@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://saradhara-stores-home.onrender.com/api/:path*"
+      "destination": "https://sharadha-stores-home-ur38.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
