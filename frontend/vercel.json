@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://batchinventorytracker.onrender.com/api/:path*"
+      "destination": "https://batch-inventory-tracker-i31z.vercel.app/api/:path*"
     }
   ]
 }
